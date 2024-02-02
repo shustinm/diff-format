@@ -136,6 +136,7 @@ dependencies = [
  "env_logger",
  "git2",
  "log",
+ "regex",
 ]
 
 [[package]]
