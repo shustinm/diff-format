@@ -3,6 +3,7 @@ use clap::Parser;
 use env_logger;
 use env_logger::Env;
 use git2::Delta;
+use git2::Diff;
 use git2::Repository;
 use log::{debug, info};
 use regex::Regex;
@@ -42,21 +43,19 @@ fn is_number_in_sorted_ranges(ranges: &[(u32, u32)], number: u32) -> bool {
     false
 }
 
-fn main() -> Result<()> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-    let args = Args::parse();
-
-    let repo = Repository::open(args.path).context("Can't open repository")?;
-    let gitref = repo.resolve_reference_from_short_name(&args.gitref)?;
+fn get_diff<'a>(repo: &'a Repository, gitref: &str) -> Result<Diff<'a>> {
+    let gitref = repo.resolve_reference_from_short_name(&gitref)?;
     debug!(
         "Repo head is '{}'",
         gitref.name().expect("gitref is not UTF-8")
     );
     debug!("Repo head shortname '{}'", gitref.shorthand().unwrap());
     let gitref_tree = gitref.peel_to_tree().context("Unable to peel gitref")?;
-    let diff = repo.diff_tree_to_workdir_with_index(Some(&gitref_tree), None)?;
+    Ok(repo.diff_tree_to_workdir_with_index(Some(&gitref_tree), None)?)
+}
 
-    let mut file_hunks: HashMap<String, Vec<HunkRange>> = HashMap::new();
+fn generate_hunkmap(diff: &Diff) -> Result<HashMap<String, Vec<HunkRange>>> {
+    let mut hunkmap = HashMap::new();
 
     diff.foreach(
         &mut |file, _| {
@@ -70,9 +69,9 @@ fn main() -> Result<()> {
                 let path = file.new_file().path().unwrap().to_str().unwrap();
                 let hunk_edges = (hunk.new_start(), hunk.new_start() + hunk.new_lines());
                 debug!("Changes in lines {}..{}", hunk_edges.0, hunk_edges.1);
-                file_hunks
+                hunkmap
                     .entry(path.into())
-                    .or_insert_with(|| Vec::new())
+                    .or_insert_with(Vec::new)
                     .push((hunk_edges.0, hunk_edges.1));
                 true
             }
@@ -82,6 +81,18 @@ fn main() -> Result<()> {
     )
     .context("Issue when iterating over diff")?;
 
+    Ok(hunkmap)
+}
+
+fn main() -> Result<()> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
+    let args = Args::parse();
+
+    let repo = Repository::open(args.path).context("Can't open repository")?;
+    let diff = get_diff(&repo, &args.gitref)?;
+
+    let file_hunks = generate_hunkmap(&diff)?;
+
     debug!("{:?}", file_hunks);
 
     let regex_pattern = r#"(.+?):(\d+)"#;
@@ -90,7 +101,7 @@ fn main() -> Result<()> {
     let stdin = io::stdin();
 
     for line in stdin.lock().lines() {
-        let line = line.expect("Could not read line from standard in");
+        let line = line.expect("Could not read line from stdin");
 
         if let Some(captures) = regex.captures(&line) {
             let filename = captures.get(1).unwrap().as_str();
