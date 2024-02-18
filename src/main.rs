@@ -34,9 +34,9 @@ fn is_number_in_sorted_ranges(ranges: &[(u32, u32)], number: u32) -> bool {
     while low < high {
         let mid = low + (high - low) / 2;
         match (number >= ranges[mid].0, number <= ranges[mid].1) {
-            (true, true) => return true, // Number is within the current range
+            (true, true) => return true,    // Number is within the current range
             (true, false) => low = mid + 1, // Number is greater than the current range, search in the right half
-            (false, _) => high = mid, // Number is less than the current range, search in the left half
+            (false, _) => high = mid,       // Number is less than the current range, search in the left half
         }
     }
 
@@ -95,11 +95,9 @@ fn main() -> Result<()> {
 
     debug!("{:?}", file_hunks);
 
-    let regex_pattern = r#"(.+?):(\d+)"#;
-    let regex = Regex::new(regex_pattern).expect("Failed to create regex");
+    let regex = Regex::new(r#"(.+?):(\d+)"#).expect("Failed to create regex");
 
     let stdin = io::stdin();
-
     for line in stdin.lock().lines() {
         let line = line.expect("Could not read line from stdin");
 
